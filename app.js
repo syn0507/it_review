@@ -719,7 +719,7 @@ function drawRadarOnCanvas(ctx, cx, cy, size, catDefs, catData) {
   });
 }
 
-async function buildPDF(type, scoreVal, riskLabel, catData, catDefs) {
+async function buildPDF(type, scoreVal, riskLabel, catData, catDefs, extra={}) {
   // A4 300dpi相当
   const CW = 2480, CH = 3508;
   const PAD = 120;
@@ -836,7 +836,18 @@ async function buildPDF(type, scoreVal, riskLabel, catData, catDefs) {
   const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4', compress:true });
   const imgData = cv.toDataURL('image/jpeg', 0.92);
   doc.addImage(imgData,'JPEG',0,0,210,297);
-  doc.save('IT診断レポート.pdf');
+
+  // 追加ページ（OT診断の「カテゴリ別サマリー」等、1ページに収まらない詳細情報）
+  if (extra.appendPages && extra.appendPages.length) {
+    for (const pageCanvas of extra.appendPages) {
+      doc.addPage();
+      const img2 = pageCanvas.toDataURL('image/jpeg', 0.92);
+      doc.addImage(img2,'JPEG',0,0,210,297);
+    }
+  }
+
+  const fileName = type==='OT診断' ? 'OT診断レポート.pdf' : type==='簡易診断' ? 'IT簡易診断レポート.pdf' : 'IT診断レポート.pdf';
+  doc.save(fileName);
 }
 
 // canvas角丸矩形ヘルパー
@@ -850,16 +861,128 @@ function roundRect(ctx, x, y, w, h, r, mode) {
   if(mode==='fill') ctx.fill(); else ctx.stroke();
 }
 
+// 文字数ベースの簡易折り返し（日本語は等幅に近いため文字数換算で十分実用的）
+function splitToLines(text, maxWidth, fontSize) {
+  const maxChars = Math.max(6, Math.floor(maxWidth / fontSize));
+  const lines = [];
+  for (let i = 0; i < text.length; i += maxChars) lines.push(text.slice(i, i + maxChars));
+  return lines.length ? lines : [''];
+}
+
+// ラベル＋折り返し段落を描画し、描画後のyを返す
+async function drawLabelParagraph(ctx, label, text, x, y, maxWidth, fontSize, lineHeight, opts={}) {
+  const { compact=false, labelColor='#0F6E56', textColor='#28404a' } = opts;
+  let cy = y;
+  if (!compact) {
+    await drawSvgText(ctx, label, x, cy+fontSize, {fontSize, bold:true, color:labelColor, maxWidth});
+    cy += lineHeight;
+    const lines = splitToLines(text, maxWidth, fontSize);
+    for (const line of lines) {
+      await drawSvgText(ctx, line, x, cy+fontSize, {fontSize, color:textColor, maxWidth});
+      cy += lineHeight;
+    }
+  } else {
+    const lines = splitToLines(label + text, maxWidth, fontSize);
+    for (const line of lines) {
+      await drawSvgText(ctx, line, x, cy+fontSize, {fontSize, color:textColor, maxWidth});
+      cy += lineHeight;
+    }
+  }
+  return cy + 8;
+}
+
+// 折り返し後の行数見積り（ページ分割の判定用）
+function estimateLines(text, maxWidth, fontSize) {
+  return splitToLines(text, maxWidth, fontSize).length;
+}
+
+// OT診断専用：「カテゴリ別サマリー」（リスク把握／運用ポリシー策定の視点／リスクとの向き合い方）を
+// 1ページ以上のcanvasに描画して返す（buildPDFに追加ページとして渡す）
+async function buildOTDetailPages(catData) {
+  const CW = 2480, CH = 3508, PAD = 120;
+  const fontBody = 30, lh = 48, labelFont = 34;
+  const contentWidth = CW - PAD*2 - 60;
+
+  const pages = [];
+  let cv = document.createElement('canvas'); cv.width = CW; cv.height = CH;
+  let ctx = cv.getContext('2d');
+  ctx.fillStyle = '#f8fafa'; ctx.fillRect(0,0,CW,CH);
+  let y = PAD;
+  await drawSvgText(ctx, 'カテゴリ別サマリー', PAD, y+50, {fontSize:48, bold:true, color:'#1a2e35'});
+  y += 60;
+  await drawSvgText(ctx, 'リスク把握・運用ポリシー策定の視点・リスクとの向き合い方', PAD, y+40, {fontSize:28, color:'#7A9CA8', maxWidth:CW-PAD*2});
+  y += 90;
+
+  function newPage() {
+    pages.push(cv);
+    cv = document.createElement('canvas'); cv.width = CW; cv.height = CH;
+    ctx = cv.getContext('2d');
+    ctx.fillStyle = '#f8fafa'; ctx.fillRect(0,0,CW,CH);
+    y = PAD;
+  }
+
+  for (const cat of OT_CATS) {
+    const p = catData[cat.id] ?? 0;
+    const tier = p >= 75 ? 'ok' : p >= 50 ? 'mid' : 'ng';
+    const r = OT_RESULT[cat.id];
+
+    // このカテゴリで減点された設問の個別リスク（画面表示と同じロジック）
+    const subRisks = [];
+    OQS.forEach((q, idx) => {
+      if (q.cat !== cat.id) return;
+      const ansIdx = oAnswers[idx];
+      if (ansIdx === undefined || ansIdx === 0) return;
+      const t = q.risk && q.risk[ansIdx];
+      if (t) subRisks.push(t);
+    });
+
+    // 必要な高さを見積り、ページに収まらなければ改ページ
+    let blockH = 90; // ヘッダー分
+    blockH += lh + estimateLines(r.risk[tier], contentWidth, fontBody) * lh;
+    blockH += subRisks.reduce((a,t) => a + estimateLines('・'+t, contentWidth-20, fontBody) * lh, 0);
+    blockH += lh + estimateLines(r.policy[tier], contentWidth, fontBody) * lh;
+    blockH += lh + estimateLines(r.stance[tier], contentWidth, fontBody) * lh;
+    blockH += 60;
+
+    if (y + blockH > CH - PAD) newPage();
+
+    const cardTop = y;
+    const [br, bg, bb] = p>=75 ? [29,158,117] : p>=50 ? [186,117,22] : [226,75,74];
+    ctx.fillStyle = '#ffffff'; roundRect(ctx, PAD, cardTop, CW-PAD*2, blockH-30, 16, 'fill');
+    ctx.strokeStyle = '#dde8e8'; ctx.lineWidth = 2; roundRect(ctx, PAD, cardTop, CW-PAD*2, blockH-30, 16, 'stroke');
+
+    let cy = cardTop + 26;
+    await drawSvgText(ctx, `${cat.icon} ${cat.name}`, PAD+30, cy+40, {fontSize:38, bold:true, color:'#1a2e35', maxWidth:contentWidth-200});
+    ctx.font = 'bold 38px Arial,sans-serif'; ctx.fillStyle = `rgb(${br},${bg},${bb})`; ctx.textAlign='right';
+    ctx.fillText(p+'点', PAD+(CW-PAD*2)-30, cy+40);
+    ctx.textAlign='left';
+    cy += 76;
+
+    cy = await drawLabelParagraph(ctx, '🔍 リスク把握：', r.risk[tier], PAD+30, cy, contentWidth, fontBody, lh, {labelColor:'#0F6E56'});
+    for (const sr of subRisks) {
+      cy = await drawLabelParagraph(ctx, '・', sr, PAD+50, cy, contentWidth-20, fontBody, lh, {compact:true, textColor:'#506470'});
+    }
+    cy = await drawLabelParagraph(ctx, '📜 運用ポリシー策定の視点：', r.policy[tier], PAD+30, cy, contentWidth, fontBody, lh, {labelColor:'#185FA5'});
+    cy = await drawLabelParagraph(ctx, '🧭 リスクとの向き合い方：', r.stance[tier], PAD+30, cy, contentWidth, fontBody, lh, {labelColor:'#854F0B'});
+
+    y = cardTop + blockH;
+  }
+
+  pages.push(cv);
+  return pages;
+}
+
 function sPDF() {
   const { catPct, total } = calcSScores();
   const risk = total>=75?'低リスク':total>=50?'中リスク':'高リスク';
   buildPDF('簡易診断', total, risk, catPct, SCATS);
 }
 
-function oPDF() {
+async function oPDF() {
   const { catPct, total } = calcOScores();
   const risk = total>=75?'低リスク':total>=50?'中リスク':'高リスク';
-  buildPDF('OT診断', total, risk, catPct, OT_CATS);
+  const appendPages = await buildOTDetailPages(catPct);
+  await buildPDF('OT診断', total, risk, catPct, OT_CATS, { appendPages });
 }
 
 // ============================================================
