@@ -979,10 +979,16 @@ function sPDF() {
 }
 
 async function oPDF() {
-  const { catPct, total } = calcOScores();
-  const risk = total>=75?'低リスク':total>=50?'中リスク':'高リスク';
-  const appendPages = await buildOTDetailPages(catPct);
-  await buildPDF('OT診断', total, risk, catPct, OT_CATS, { appendPages });
+  try {
+    const { catPct, total } = calcOScores();
+    const risk = total>=75?'低リスク':total>=50?'中リスク':'高リスク';
+    const appendPages = await buildOTDetailPages(catPct);
+    console.log('[OT PDF] カテゴリ別サマリーの追加ページ数:', appendPages.length); // 動作確認用ログ（F12の「Console」タブで確認可能）
+    await buildPDF('OT診断', total, risk, catPct, OT_CATS, { appendPages });
+  } catch (e) {
+    console.error('[OT PDF] エラー:', e);
+    alert('PDF生成中にエラーが発生しました：' + (e && e.message ? e.message : e));
+  }
 }
 
 // ============================================================
