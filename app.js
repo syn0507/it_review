@@ -641,9 +641,13 @@ async function saveResult(type, score, risk, details) {
       type, score, risk,
       details,
     });
-    if (error) console.error('保存エラー:', error);
+    if (error) {
+      console.error('[保存エラー]', error);
+      alert('結果の保存に失敗しました（管理画面に表示されません）：\n' + (error.message || JSON.stringify(error)));
+    }
   } catch (e) {
-    console.error('Supabase接続エラー:', e);
+    console.error('[Supabase接続エラー]', e);
+    alert('結果の保存中に接続エラーが発生しました：\n' + (e && e.message ? e.message : e));
   }
 }
 
@@ -1012,9 +1016,11 @@ async function loadAdminData() {
     const { data, error } = await db.from('results').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     allResults = data || [];
+    console.log('[管理画面] 取得件数:', allResults.length); // 動作確認用ログ（F12の「Console」タブで確認可能）
   } catch (e) {
     allResults = [];
-    console.error('取得エラー:', e);
+    console.error('[取得エラー]', e);
+    alert('結果一覧の取得に失敗しました：\n' + (e && e.message ? e.message : JSON.stringify(e)));
   }
   document.getElementById('admin-loading').style.display = 'none';
   document.getElementById('admin-content').style.display = 'block';
