@@ -114,25 +114,14 @@
   .user-banner-name { font-size: 13px; font-weight: 500; color: var(--text); display: flex; align-items: center; gap: 6px; }
   .user-dot { width: 28px; height: 28px; border-radius: 50%; background: var(--teal-light); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--teal-dark); flex-shrink: 0; }
 
-  /* 監査 */
-  .audit-cat { margin-bottom: 10px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-  .audit-cat-hd { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; background: var(--bg); cursor: pointer; }
-  .audit-cat-hd-left { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--text); }
-  .audit-cat-body { display: none; }
-  .audit-cat-body.open { display: block; }
-  .audit-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); }
-  .audit-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--teal); flex-shrink: 0; margin-top: 2px; }
-  .audit-item-main { flex: 1; }
-  .audit-item-title { font-size: 13px; color: var(--text); line-height: 1.55; cursor: pointer; }
-  .audit-tags { display: flex; gap: 5px; margin-top: 4px; flex-wrap: wrap; }
-  .tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; font-weight: 500; }
-  .tag-hi { background: var(--red-light); color: #A32D2D; }
-  .tag-mid { background: var(--amber-light); color: #854F0B; }
-  .tag-lo { background: #F1EFE8; color: #5F5E5A; }
-  .tag-type { background: #E6F1FB; color: #185FA5; }
-  .cat-badge { font-size: 11px; padding: 2px 9px; border-radius: 20px; font-weight: 500; background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
-  .chevron { font-size: 12px; color: var(--text-muted); transition: transform .2s; }
-  .audit-cat-hd.open .chevron { transform: rotate(180deg); }
+  /* OT診断 結果カード */
+  .ot-cat-card { background: var(--bg); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+  .ot-cat-hd { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+  .ot-block { font-size: 13px; line-height: 1.65; margin-bottom: 9px; }
+  .ot-block:last-child { margin-bottom: 0; }
+  .ot-block b { color: var(--text); }
+  .ot-sub-list { margin: 4px 0 9px 18px; font-size: 12px; color: var(--text-mid); line-height: 1.6; }
+  .ot-bar-row { margin-bottom: 9px; }
 
   /* 管理画面 */
   .admin-header { background: var(--teal-deep); color: #fff; padding: 14px 16px; border-radius: var(--radius-lg) var(--radius-lg) 0 0; display: flex; align-items: center; justify-content: space-between; margin: -1.5rem -1.5rem 1.5rem; }
@@ -240,8 +229,8 @@
       <button class="btn btn-secondary" style="font-size:12px;padding:5px 12px" onclick="goEntry()">変更</button>
     </div>
     <div class="mode-tabs">
-      <button class="mode-tab active" id="tab-s" onclick="switchMode('simple')">⚡ 簡易診断（5分）</button>
-      <button class="mode-tab" id="tab-a" onclick="switchMode('audit')">📋 詳細監査チェック</button>
+      <button class="mode-tab active" id="tab-s" onclick="switchMode('simple')">⚡ IT簡易診断（5分）</button>
+      <button class="mode-tab" id="tab-o" onclick="switchMode('ot')">🏭 OT診断（25問）</button>
     </div>
     <!-- 簡易診断 -->
     <div id="mode-simple">
@@ -267,22 +256,29 @@
       </div>
       <div id="ss-result" style="display:none"></div>
     </div>
-    <!-- 詳細監査 -->
-    <div id="mode-audit" style="display:none">
-      <div id="as-start" class="text-center" style="padding:1rem 0 1.5rem">
+    <!-- OT診断 -->
+    <div id="mode-ot" style="display:none">
+      <div id="os-start" class="text-center" style="padding:1rem 0 1.5rem">
         <p style="font-size:14px;color:var(--text-muted);line-height:1.7;margin-bottom:1.25rem">
-          実際の情シス業務ベースの詳細チェックリスト（46項目）です。
+          工場・拠点の制御システム（OT）に特化した25問のチェックです。<br>リスクの所在、運用ポリシー策定の視点、リスクとの向き合い方を整理します。
         </p>
-        <button class="btn btn-primary btn-lg" onclick="aStart()">チェックリストを開く →</button>
+        <button class="btn btn-primary btn-lg" onclick="oStart()">診断をはじめる →</button>
       </div>
-      <div id="as-body" style="display:none">
-        <div id="audit-list"></div>
-        <div class="flex-row flex-center flex-wrap mt-3">
-          <button class="btn btn-primary" onclick="aShowResult()">📊 結果を見る・保存する</button>
-          <button class="btn btn-secondary" onclick="aReset()">↺ リセット</button>
+      <div id="os-quiz" style="display:none">
+        <div class="progress-wrap">
+          <div class="progress-bar"><div class="progress-fill" id="o-prog"></div></div>
+          <div class="progress-label"><span id="o-cat-label"></span><span id="o-num"></span></div>
+        </div>
+        <div class="cat-pill" id="o-cat"></div>
+        <p class="q-text" id="o-q"></p>
+        <p class="q-hint" id="o-hint" style="display:none"></p>
+        <div class="choices" id="o-choices"></div>
+        <div class="nav-row">
+          <button class="btn btn-secondary" id="o-back" onclick="oBack()">← 戻る</button>
+          <button class="btn btn-primary" id="o-next" onclick="oNext()" disabled>次へ →</button>
         </div>
       </div>
-      <div id="as-result" style="display:none"></div>
+      <div id="os-result" style="display:none"></div>
     </div>
   </div>
 
@@ -320,8 +316,8 @@
           <p style="font-size:13px;color:var(--text-muted);flex:1;min-width:60px" id="admin-count"></p>
           <select id="filter-type" style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;background:var(--surface)" onchange="renderTable()">
             <option value="">種別：すべて</option>
-            <option value="簡易診断">簡易診断のみ</option>
-            <option value="詳細監査">詳細監査のみ</option>
+            <option value="簡易診断">IT簡易診断のみ</option>
+            <option value="OT診断">OT診断のみ</option>
           </select>
           <select id="filter-industry-admin" style="font-size:12px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;background:var(--surface)" onchange="renderTable()">
             <option value="">業種：すべて</option>
